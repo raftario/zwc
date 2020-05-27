@@ -1,0 +1,9 @@
+[package]
+name = "zwc-encode"
+version = "0.1.0"
+authors = ["Raphaël Thériault <raphael_theriault@outlook.com>"]
+edition = "2018"
+
+[features]
+default = ["std"]
+std = []
