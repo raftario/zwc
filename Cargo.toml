@@ -3,6 +3,8 @@ name = "zwc-encode"
 version = "0.1.0"
 authors = ["Raphaël Thériault <raphael_theriault@outlook.com>"]
 edition = "2018"
+description = "Encode binary data using zero-width characters"
+license = "Apache-2.0"
 
 [dependencies]
 [dependencies.brotli]

@@ -165,7 +165,7 @@ mod camouflage {
     pub fn camouflage(
         mut payload: Vec<u8>,
         dummy: &str,
-        compression_level: Option<i32>,
+        compression_level: i32,
         key: Option<&str>,
     ) -> Result<String, CamouflageError> {
         use brotli::enc::BrotliEncoderParams;
@@ -190,21 +190,19 @@ mod camouflage {
             &mut payload.as_slice(),
             &mut compressed_payload,
             &BrotliEncoderParams {
-                quality: compression_level.unwrap_or(10),
+                quality: compression_level,
                 size_hint: payload.len(),
                 ..Default::default()
             },
         )?;
 
-        let zwc_per_char = ((compressed_payload.len() * 6) / dummy.len()) + 1;
         let mut camouflaged = String::with_capacity((compressed_payload.len() * 6) + dummy.len());
-
         let mut encoded_payload = crate::zwc_encode(compressed_payload.iter().copied());
 
         for c in dummy.chars() {
             camouflaged.push(c);
-            for _ in 0..zwc_per_char {
-                if let Some(c) = encoded_payload.next() {
+            if c.is_ascii_whitespace() {
+                for c in &mut encoded_payload {
                     camouflaged.push(c);
                 }
             }
