@@ -80,9 +80,14 @@ impl From<Block> for u8 {
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct Compression(u8);
 impl Compression {
-    #[inline]
-    pub fn new(g0: [char; 2], g1: [char; 2]) -> Result<Self, Error> {
-        Ok(Self(Block::from_chars([g0[0], g0[1], g1[0], g1[1]])?.0))
+    pub fn new(p0: u8, p1: u8) -> Result<Self, Error> {
+        if p0 >= 16 {
+            return Err(Error::InvalidCompressionPattern(p0));
+        }
+        if p1 >= 16 {
+            return Err(Error::InvalidCompressionPattern(p1));
+        }
+        Ok(Self(p0 | (p1 << 4)))
     }
 
     #[inline]
@@ -103,7 +108,6 @@ impl Compression {
         self.0 & 0b1111_0000
     }
 
-    #[inline]
     fn block_to_chars(self, b: Block) -> ([char; 4], usize) {
         let mut chars = ['\0'; 4];
         let mut len = 0;
@@ -135,7 +139,6 @@ impl Compression {
         (chars, len)
     }
 
-    #[inline]
     fn block_from_chars(self, chars: [char; 4], len: usize) -> Result<Block, Error> {
         if len == 4 {
             Block::from_chars(chars)
@@ -221,6 +224,7 @@ pub fn is_zwc(c: char) -> bool {
 pub enum Error {
     InvalidCharacter(char),
     IncompleteBlock(usize),
+    InvalidCompressionPattern(u8),
 }
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -228,6 +232,9 @@ impl fmt::Display for Error {
             Self::InvalidCharacter(c) => write!(f, "expected zero-width character but got {}", c),
             Self::IncompleteBlock(len) => {
                 write!(f, "expected more than {} characters in block", len)
+            }
+            Self::InvalidCompressionPattern(p) => {
+                write!(f, "expected a 4 bits value but got {:08b}", p)
             }
         }
     }
@@ -384,16 +391,27 @@ mod camouflage {
     use std::fmt;
 
     pub fn camouflage(
-        mut payload: Vec<u8>,
+        payload: Vec<u8>,
         dummy: &str,
-        compression_level: i32,
         key: Option<&str>,
-    ) -> Result<String, CamouflageError> {
+        compression_level: Option<i32>,
+    ) -> Result<String, Error> {
         use brotli::enc::BrotliEncoderParams;
         use chacha20::ChaCha20Rng;
         use chacha20poly1305::aead::Aead;
         use generic_array::GenericArray;
         use rand_core::{RngCore, SeedableRng};
+
+        let mut compressed_payload = Vec::with_capacity(payload.len());
+        brotli::BrotliCompress(
+            &mut payload.as_slice(),
+            &mut compressed_payload,
+            &BrotliEncoderParams {
+                quality: compression_level.unwrap_or(10),
+                size_hint: payload.len(),
+                ..Default::default()
+            },
+        )?;
 
         if let Some(k) = key {
             let cipher = get_cipher(k);
@@ -401,98 +419,135 @@ mod camouflage {
             let mut nonce = [0; 12];
             ChaCha20Rng::from_entropy().fill_bytes(&mut nonce);
 
-            cipher.encrypt_in_place(GenericArray::from_slice(&nonce), b"", &mut payload)?;
+            cipher.encrypt_in_place(
+                GenericArray::from_slice(&nonce),
+                b"",
+                &mut compressed_payload,
+            )?;
 
-            payload.extend_from_slice(&nonce);
+            compressed_payload.extend_from_slice(&nonce);
         }
 
-        let mut compressed_payload = Vec::with_capacity(payload.len());
-        brotli::BrotliCompress(
-            &mut payload.as_slice(),
-            &mut compressed_payload,
-            &BrotliEncoderParams {
-                quality: compression_level,
-                size_hint: payload.len(),
-                ..Default::default()
-            },
-        )?;
+        let mut patterns = [0usize; 16];
+        for b in compressed_payload.iter().copied() {
+            patterns[(b & 0b0000_1111) as usize] += 1;
+            patterns[((b & 0b1111_0000) >> 4) as usize] += 1;
+        }
+        let recurrent_patterns =
+            patterns
+                .iter()
+                .copied()
+                .enumerate()
+                .fold([0; 2], |acc, (i, o)| {
+                    if o > patterns[acc[0]] {
+                        [i, acc[1]]
+                    } else if o > patterns[acc[1]] {
+                        [acc[0], i]
+                    } else {
+                        acc
+                    }
+                });
+        let rp0 = recurrent_patterns[0] as u8;
+        let rp1 = recurrent_patterns[1] as u8;
+        let compression = crate::Compression::new(rp0, rp1)?;
 
-        let mut camouflaged = String::with_capacity((compressed_payload.len() * 6) + dummy.len());
-        let mut encoded_payload = crate::encode(compressed_payload.iter().copied());
+        let mut encoded_payload =
+            crate::encode_compress(compressed_payload.iter().copied(), compression);
 
+        let mut camouflaged = String::with_capacity((compressed_payload.len() * 8) + dummy.len());
         for c in dummy.chars() {
             camouflaged.push(c);
-            if c.is_ascii_whitespace() {
+            if c == ' ' {
                 for c in &mut encoded_payload {
                     camouflaged.push(c);
                 }
+                camouflaged.push(crate::CHARS[(rp0 & 0b0011) as usize]);
+                camouflaged.push(crate::CHARS[((rp0 & 0b1100) >> 2) as usize]);
+                camouflaged.push(crate::CHARS[(rp1 & 0b0011) as usize]);
+                camouflaged.push(crate::CHARS[((rp1 & 0b1100) >> 2) as usize]);
             }
         }
-        for c in encoded_payload {
-            camouflaged.push(c);
+        if encoded_payload.next().is_some() {
+            return Err(Error::NoSpaces);
         }
 
         Ok(camouflaged)
     }
 
-    pub fn decamouflage(camouflaged: &str, key: Option<&str>) -> Result<Vec<u8>, CamouflageError> {
+    pub fn decamouflage(camouflaged: &str, key: Option<&str>) -> Result<Vec<u8>, Error> {
         use brotli::BrotliDecompress;
         use chacha20poly1305::aead::Aead;
         use generic_array::GenericArray;
 
-        let encoded_payload = camouflaged.chars().filter(|c| crate::is_zwc(*c));
-        let compressed_payload = crate::decode(encoded_payload).collect::<Result<Vec<u8>, _>>()?;
+        let mut encoded_payload: Vec<char> =
+            camouflaged.chars().filter(|c| crate::is_zwc(*c)).collect();
 
-        let mut payload = Vec::with_capacity(compressed_payload.len() * 4);
-        BrotliDecompress(&mut compressed_payload.as_slice(), &mut payload)?;
+        let c3 = encoded_payload.pop().ok_or(Error::InvalidPayload)?;
+        let c2 = encoded_payload.pop().ok_or(Error::InvalidPayload)?;
+        let c1 = encoded_payload.pop().ok_or(Error::InvalidPayload)?;
+        let c0 = encoded_payload.pop().ok_or(Error::InvalidPayload)?;
+        let compression = crate::Compression::new(
+            crate::val(c0)? | (crate::val(c1)? << 2),
+            crate::val(c2)? | (crate::val(c3)? << 2),
+        )?;
+
+        let mut compressed_payload =
+            crate::decode_decompress(encoded_payload.into_iter(), compression)
+                .collect::<Result<Vec<u8>, _>>()?;
 
         if let Some(k) = key {
             let cipher = get_cipher(k);
 
-            let nonce_boundary = payload.len() - 12;
-            let nonce = GenericArray::clone_from_slice(&payload[nonce_boundary..]);
-            payload.truncate(nonce_boundary);
+            let nonce_boundary = compressed_payload.len() - 12;
+            let nonce = GenericArray::clone_from_slice(&compressed_payload[nonce_boundary..]);
+            compressed_payload.truncate(nonce_boundary);
 
-            cipher.decrypt_in_place(&nonce, b"", &mut payload)?;
+            cipher.decrypt_in_place(&nonce, b"", &mut compressed_payload)?;
         }
+
+        let mut payload = Vec::with_capacity(compressed_payload.len() * 4);
+        BrotliDecompress(&mut compressed_payload.as_slice(), &mut payload)?;
 
         Ok(payload)
     }
 
     /// Represents an error that might occur while camouflaging or decamouflaging a payload
     #[derive(Debug)]
-    pub enum CamouflageError {
-        ZwcDecode(crate::Error),
+    pub enum Error {
+        Zwc(crate::Error),
         Cipher(chacha20poly1305::aead::Error),
         Brotli(std::io::Error),
+        NoSpaces,
+        InvalidPayload,
     }
-    impl fmt::Display for CamouflageError {
+    impl fmt::Display for Error {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             match self {
-                Self::ZwcDecode(e) => write!(f, "zero-width character decoding error: {}", e),
+                Self::Zwc(e) => write!(f, "zero-width character decoding error: {}", e),
                 Self::Cipher(e) => write!(f, "cipher error: {:?}", e),
                 Self::Brotli(e) => write!(f, "brotli error: {}", e),
+                Self::NoSpaces => write!(f, "no spaces in dummy string"),
+                Self::InvalidPayload => write!(f, "the payload is invalid"),
             }
         }
     }
-    impl std::error::Error for CamouflageError {}
-    impl From<crate::Error> for CamouflageError {
+    impl std::error::Error for Error {}
+    impl From<crate::Error> for Error {
         fn from(e: crate::Error) -> Self {
-            Self::ZwcDecode(e)
+            Self::Zwc(e)
         }
     }
-    impl From<chacha20poly1305::aead::Error> for CamouflageError {
+    impl From<chacha20poly1305::aead::Error> for Error {
         fn from(e: chacha20poly1305::aead::Error) -> Self {
             Self::Cipher(e)
         }
     }
-    impl From<std::io::Error> for CamouflageError {
+    impl From<std::io::Error> for Error {
         fn from(e: std::io::Error) -> Self {
             Self::Brotli(e)
         }
     }
 
-    /// Creates a cipher from a key
     fn get_cipher(key: &str) -> chacha20poly1305::ChaCha20Poly1305 {
         use chacha20poly1305::{aead::NewAead, ChaCha20Poly1305};
         use generic_array::GenericArray;
@@ -524,8 +579,7 @@ mod camouflage {
         fn round_trip() {
             let dummy = "Hello, World!";
 
-            let camouflaged =
-                super::camouflage(SRC.to_vec(), dummy, Some(11), Some("secret")).unwrap();
+            let camouflaged = super::camouflage(SRC.to_vec(), dummy, Some("secret"), None).unwrap();
             let decamouflaged = super::decamouflage(&camouflaged, Some("secret")).unwrap();
 
             assert_eq!(SRC, decamouflaged.as_slice());
@@ -549,11 +603,7 @@ mod tests {
 
     #[test]
     fn compression_round_trip() {
-        let compression = super::Compression::new(
-            [super::CHARS[0], super::CHARS[1]],
-            [super::CHARS[2], super::CHARS[3]],
-        )
-        .unwrap();
+        let compression = super::Compression::new(0b0000, 0b1111).unwrap();
         let encoded = super::encode_compress(SRC.iter().copied(), compression);
         let decoded = super::decode_decompress(encoded, compression);
 
