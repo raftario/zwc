@@ -169,12 +169,20 @@ mod camouflage {
         key: Option<&str>,
     ) -> Result<String, CamouflageError> {
         use brotli::enc::BrotliEncoderParams;
+        use chacha20::ChaCha20Rng;
         use chacha20poly1305::aead::Aead;
         use generic_array::GenericArray;
+        use rand_core::{RngCore, SeedableRng};
 
         if let Some(k) = key {
-            let (cipher, nonce) = get_cipher(k);
+            let cipher = get_cipher(k);
+
+            let mut nonce = [0; 12];
+            ChaCha20Rng::from_entropy().fill_bytes(&mut nonce);
+
             cipher.encrypt_in_place(GenericArray::from_slice(&nonce), b"", &mut payload)?;
+
+            payload.extend_from_slice(&nonce);
         }
 
         let mut compressed_payload = Vec::with_capacity(payload.len());
@@ -222,8 +230,13 @@ mod camouflage {
         BrotliDecompress(&mut compressed_payload.as_slice(), &mut payload)?;
 
         if let Some(k) = key {
-            let (cipher, nonce) = get_cipher(k);
-            cipher.decrypt_in_place(GenericArray::from_slice(&nonce), b"", &mut payload)?;
+            let cipher = get_cipher(k);
+
+            let nonce_boundary = payload.len() - 12;
+            let nonce = GenericArray::clone_from_slice(&payload[nonce_boundary..]);
+            payload.truncate(nonce_boundary);
+
+            cipher.decrypt_in_place(&nonce, b"", &mut payload)?;
         }
 
         Ok(payload)
@@ -263,7 +276,7 @@ mod camouflage {
     }
 
     /// Creates a cipher from a key
-    fn get_cipher(key: &str) -> (chacha20poly1305::ChaCha20Poly1305, [u8; 12]) {
+    fn get_cipher(key: &str) -> chacha20poly1305::ChaCha20Poly1305 {
         use chacha20poly1305::{aead::NewAead, ChaCha20Poly1305};
         use generic_array::GenericArray;
         use poly1305::{universal_hash::UniversalHash, Poly1305};
@@ -278,17 +291,12 @@ mod camouflage {
             .result()
             .into_bytes();
         let mut key = [0; 32];
-        for i in 0..32 {
-            key[i] = key_hash[i % 16]
+        for i in 0..16 {
+            key[i] = key_hash[i];
+            key[i + 16] = key_hash[i];
         }
 
-        let cipher = ChaCha20Poly1305::new(GenericArray::clone_from_slice(&key));
-        let mut nonce = [0; 12];
-        for i in 0..12 {
-            nonce[i] = key_hash[i];
-        }
-
-        (cipher, nonce)
+        ChaCha20Poly1305::new(GenericArray::clone_from_slice(&key))
     }
 
     #[cfg(test)]
