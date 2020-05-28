@@ -1,0 +1,9 @@
+[package]
+name = "zwcamo"
+version = "0.1.0"
+authors = ["Raphaël Thériault <raphael_theriault@outlook.com>"]
+edition = "2018"
+
+[dependencies]
+zwc-encode = { path = ".." }
+structopt = "0.3"

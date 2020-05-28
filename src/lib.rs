@@ -159,7 +159,6 @@ impl<T: Iterator<Item = char>> Iterator for DecodeIter<T> {
 
 #[cfg(feature = "camouflage")]
 mod camouflage {
-    use crate::ZwcDecodeError;
     use std::fmt;
 
     /// Camouflages a compressed and optionally ciphered payload inside a string
@@ -248,7 +247,7 @@ mod camouflage {
     }
     impl std::error::Error for CamouflageError {}
     impl From<crate::ZwcDecodeError> for CamouflageError {
-        fn from(e: ZwcDecodeError) -> Self {
+        fn from(e: crate::ZwcDecodeError) -> Self {
             Self::ZwcDecode(e)
         }
     }

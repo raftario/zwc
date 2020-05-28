@@ -30,3 +30,6 @@ camouflage = [
     "poly1305",
     "std",
 ]
+
+[workspace]
+members = ["cli"]
