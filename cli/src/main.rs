@@ -67,29 +67,12 @@ fn camouflage(
             });
         data
     });
-    let compression_level = match compression_level {
-        Some(l) => {
-            if l < 0 || l > 11 {
-                eprintln!("Invalid compression level");
-                process::exit(64)
-            } else {
-                l
-            }
-        }
-        None => {
-            if key.is_some() {
-                6
-            } else {
-                10
-            }
-        }
-    };
 
     match zwc_encode::camouflage(
         payload,
         dummy.as_ref(),
-        compression_level,
         key.as_ref().map(AsRef::as_ref),
+        compression_level,
     ) {
         Ok(camouflaged) => println!("{}", camouflaged),
         Err(e) => eprintln!("{}", e),
