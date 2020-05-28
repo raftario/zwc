@@ -162,6 +162,7 @@ mod camouflage {
     use crate::ZwcDecodeError;
     use std::fmt;
 
+    /// Camouflages a compressed and optionally ciphered payload inside a string
     pub fn camouflage(
         mut payload: Vec<u8>,
         dummy: &str,
@@ -208,6 +209,7 @@ mod camouflage {
         Ok(camouflaged)
     }
 
+    /// Extracts a previously camouflaged payload from a string
     pub fn decamouflage(camouflaged: &str, key: Option<&str>) -> Result<Vec<u8>, CamouflageError> {
         use brotli::BrotliDecompress;
         use chacha20poly1305::aead::Aead;
@@ -228,6 +230,7 @@ mod camouflage {
         Ok(payload)
     }
 
+    /// Represents an error that might occur while camouflaging or decamouflaging a payload
     #[derive(Debug)]
     pub enum CamouflageError {
         ZwcDecode(crate::ZwcDecodeError),
@@ -260,6 +263,7 @@ mod camouflage {
         }
     }
 
+    /// Creates a cipher from a key
     fn get_cipher(key: &str) -> (chacha20poly1305::ChaCha20Poly1305, [u8; 12]) {
         use chacha20poly1305::{aead::NewAead, ChaCha20Poly1305};
         use generic_array::GenericArray;
