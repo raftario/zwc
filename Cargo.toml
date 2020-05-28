@@ -4,6 +4,29 @@ version = "0.1.0"
 authors = ["Raphaël Thériault <raphael_theriault@outlook.com>"]
 edition = "2018"
 
+[dependencies]
+[dependencies.brotli]
+version = "3"
+optional = true
+[dependencies.chacha20poly1305]
+version = "0.4"
+optional = true
+default-features = false
+features = ["alloc", "chacha20"]
+[dependencies.generic-array]
+version = "0.12"
+optional = true
+[dependencies.poly1305]
+version = "0.5"
+optional = true
+
 [features]
-default = ["std"]
+default = ["camouflage"]
 std = []
+camouflage = [
+    "brotli",
+    "chacha20poly1305",
+    "generic-array",
+    "poly1305",
+    "std",
+]
