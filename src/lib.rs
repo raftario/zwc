@@ -3,7 +3,7 @@
 use core::fmt;
 
 /// Converts an iterator over bytes into an iterator over zero-width characters
-pub fn zwc_encode_iter<T: Iterator<Item = u8>>(iter: T) -> impl Iterator<Item = char> {
+pub fn zwc_encode<T: Iterator<Item = u8>>(iter: T) -> impl Iterator<Item = char> {
     EncodeIter {
         inner: iter,
         buffer: ['\0'; 3],
@@ -12,7 +12,7 @@ pub fn zwc_encode_iter<T: Iterator<Item = u8>>(iter: T) -> impl Iterator<Item = 
 }
 
 /// Converts an iterator over zero-width characters into an bytes
-pub fn zwc_decode_iter<T: Iterator<Item = char>>(
+pub fn zwc_decode<T: Iterator<Item = char>>(
     iter: T,
 ) -> impl Iterator<Item = Result<u8, ZwcDecodeError>> {
     DecodeIter { inner: iter }
@@ -160,8 +160,8 @@ mod tests {
     fn round_trip() {
         let original = include_bytes!("./lib.rs");
 
-        let encoded = super::zwc_encode_iter(original.iter().copied());
-        let decoded = super::zwc_decode_iter(encoded);
+        let encoded = super::zwc_encode(original.iter().copied());
+        let decoded = super::zwc_decode(encoded);
 
         for (ob, db) in original.iter().copied().zip(decoded) {
             assert_eq!(ob, db.unwrap());
