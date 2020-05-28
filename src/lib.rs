@@ -304,7 +304,7 @@ mod camouflage {
         static SRC: &[u8] = include_bytes!("./lib.rs");
 
         #[test]
-        fn camouflage_round_trip() {
+        fn round_trip() {
             let dummy = "Hello, World!";
 
             let camouflaged =
