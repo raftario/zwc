@@ -1,5 +1,8 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
+#[cfg(feature = "camouflage")]
+pub use camouflage::*;
+
 use core::fmt;
 
 /// Converts an iterator over bytes into an iterator over zero-width characters
@@ -30,80 +33,6 @@ pub fn is_zwc(c: char) -> bool {
         '\u{2064}' => true,
         _ => false,
     }
-}
-
-#[cfg(feature = "camouflage")]
-pub fn camouflage(
-    mut payload: Vec<u8>,
-    dummy: &str,
-    compression_level: Option<i32>,
-    key: Option<&str>,
-) -> String {
-    use brotli::enc::BrotliEncoderParams;
-    use chacha20poly1305::aead::Aead;
-    use generic_array::GenericArray;
-
-    if let Some(k) = key {
-        let (cipher, nonce) = get_cipher(k);
-        cipher
-            .encrypt_in_place(GenericArray::from_slice(&nonce), b"", &mut payload)
-            .unwrap();
-    }
-
-    let mut compressed_payload = Vec::with_capacity(payload.len());
-    brotli::BrotliCompress(
-        &mut payload.as_slice(),
-        &mut compressed_payload,
-        &BrotliEncoderParams {
-            quality: compression_level.unwrap_or(10),
-            size_hint: payload.len(),
-            ..Default::default()
-        },
-    )
-    .unwrap();
-
-    let zwc_per_char = ((compressed_payload.len() * 6) / dummy.len()) + 1;
-    let mut camouflaged = String::with_capacity((compressed_payload.len() * 6) + dummy.len());
-
-    let mut encoded_payload = zwc_encode(compressed_payload.iter().copied());
-
-    for c in dummy.chars() {
-        camouflaged.push(c);
-        for _ in 0..zwc_per_char {
-            if let Some(c) = encoded_payload.next() {
-                camouflaged.push(c);
-            }
-        }
-    }
-    for c in encoded_payload {
-        camouflaged.push(c);
-    }
-
-    camouflaged
-}
-
-#[cfg(feature = "camouflage")]
-pub fn decamouflage(camouflaged: &str, key: Option<&str>) -> Vec<u8> {
-    use brotli::BrotliDecompress;
-    use chacha20poly1305::aead::Aead;
-    use generic_array::GenericArray;
-
-    let encoded_payload = camouflaged.chars().filter(|c| is_zwc(*c));
-    let compressed_payload = zwc_decode(encoded_payload)
-        .collect::<Result<Vec<u8>, _>>()
-        .unwrap();
-
-    let mut payload = Vec::with_capacity(compressed_payload.len() * 4);
-    BrotliDecompress(&mut compressed_payload.as_slice(), &mut payload).unwrap();
-
-    if let Some(k) = key {
-        let (cipher, nonce) = get_cipher(k);
-        cipher
-            .decrypt_in_place(GenericArray::from_slice(&nonce), b"", &mut payload)
-            .unwrap();
-    }
-
-    payload
 }
 
 /// Represents an error that might occur while decoding data
@@ -229,32 +158,151 @@ impl<T: Iterator<Item = char>> Iterator for DecodeIter<T> {
 }
 
 #[cfg(feature = "camouflage")]
-fn get_cipher(key: &str) -> (chacha20poly1305::ChaCha20Poly1305, [u8; 12]) {
-    use chacha20poly1305::{aead::NewAead, ChaCha20Poly1305};
-    use generic_array::GenericArray;
-    use poly1305::{universal_hash::UniversalHash, Poly1305};
+mod camouflage {
+    use crate::ZwcDecodeError;
+    use std::fmt;
 
-    let key_bytes = key.as_bytes();
-    let mut key_hasher_key = [0; 32];
-    for i in 0..32 {
-        key_hasher_key[i] = key_bytes[i % key_bytes.len()];
-    }
-    let key_hash = Poly1305::new(GenericArray::from_slice(&key_hasher_key))
-        .chain(key_bytes)
-        .result()
-        .into_bytes();
-    let mut key = [0; 32];
-    for i in 0..32 {
-        key[i] = key_hash[i % 16]
+    pub fn camouflage(
+        mut payload: Vec<u8>,
+        dummy: &str,
+        compression_level: Option<i32>,
+        key: Option<&str>,
+    ) -> Result<String, CamouflageError> {
+        use brotli::enc::BrotliEncoderParams;
+        use chacha20poly1305::aead::Aead;
+        use generic_array::GenericArray;
+
+        if let Some(k) = key {
+            let (cipher, nonce) = get_cipher(k);
+            cipher.encrypt_in_place(GenericArray::from_slice(&nonce), b"", &mut payload)?;
+        }
+
+        let mut compressed_payload = Vec::with_capacity(payload.len());
+        brotli::BrotliCompress(
+            &mut payload.as_slice(),
+            &mut compressed_payload,
+            &BrotliEncoderParams {
+                quality: compression_level.unwrap_or(10),
+                size_hint: payload.len(),
+                ..Default::default()
+            },
+        )?;
+
+        let zwc_per_char = ((compressed_payload.len() * 6) / dummy.len()) + 1;
+        let mut camouflaged = String::with_capacity((compressed_payload.len() * 6) + dummy.len());
+
+        let mut encoded_payload = crate::zwc_encode(compressed_payload.iter().copied());
+
+        for c in dummy.chars() {
+            camouflaged.push(c);
+            for _ in 0..zwc_per_char {
+                if let Some(c) = encoded_payload.next() {
+                    camouflaged.push(c);
+                }
+            }
+        }
+        for c in encoded_payload {
+            camouflaged.push(c);
+        }
+
+        Ok(camouflaged)
     }
 
-    let cipher = ChaCha20Poly1305::new(GenericArray::clone_from_slice(&key));
-    let mut nonce = [0; 12];
-    for i in 0..12 {
-        nonce[i] = key_hash[i];
+    pub fn decamouflage(camouflaged: &str, key: Option<&str>) -> Result<Vec<u8>, CamouflageError> {
+        use brotli::BrotliDecompress;
+        use chacha20poly1305::aead::Aead;
+        use generic_array::GenericArray;
+
+        let encoded_payload = camouflaged.chars().filter(|c| crate::is_zwc(*c));
+        let compressed_payload =
+            crate::zwc_decode(encoded_payload).collect::<Result<Vec<u8>, _>>()?;
+
+        let mut payload = Vec::with_capacity(compressed_payload.len() * 4);
+        BrotliDecompress(&mut compressed_payload.as_slice(), &mut payload)?;
+
+        if let Some(k) = key {
+            let (cipher, nonce) = get_cipher(k);
+            cipher.decrypt_in_place(GenericArray::from_slice(&nonce), b"", &mut payload)?;
+        }
+
+        Ok(payload)
     }
 
-    (cipher, nonce)
+    #[derive(Debug)]
+    pub enum CamouflageError {
+        ZwcDecode(crate::ZwcDecodeError),
+        Cipher(chacha20poly1305::aead::Error),
+        Brotli(std::io::Error),
+    }
+    impl fmt::Display for CamouflageError {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match self {
+                Self::ZwcDecode(e) => write!(f, "zero-width character decoding error: {}", e),
+                Self::Cipher(e) => write!(f, "cipher error: {:?}", e),
+                Self::Brotli(e) => write!(f, "brotli error: {}", e),
+            }
+        }
+    }
+    impl std::error::Error for CamouflageError {}
+    impl From<crate::ZwcDecodeError> for CamouflageError {
+        fn from(e: ZwcDecodeError) -> Self {
+            Self::ZwcDecode(e)
+        }
+    }
+    impl From<chacha20poly1305::aead::Error> for CamouflageError {
+        fn from(e: chacha20poly1305::aead::Error) -> Self {
+            Self::Cipher(e)
+        }
+    }
+    impl From<std::io::Error> for CamouflageError {
+        fn from(e: std::io::Error) -> Self {
+            Self::Brotli(e)
+        }
+    }
+
+    fn get_cipher(key: &str) -> (chacha20poly1305::ChaCha20Poly1305, [u8; 12]) {
+        use chacha20poly1305::{aead::NewAead, ChaCha20Poly1305};
+        use generic_array::GenericArray;
+        use poly1305::{universal_hash::UniversalHash, Poly1305};
+
+        let key_bytes = key.as_bytes();
+        let mut key_hasher_key = [0; 32];
+        for i in 0..32 {
+            key_hasher_key[i] = key_bytes[i % key_bytes.len()];
+        }
+        let key_hash = Poly1305::new(GenericArray::from_slice(&key_hasher_key))
+            .chain(key_bytes)
+            .result()
+            .into_bytes();
+        let mut key = [0; 32];
+        for i in 0..32 {
+            key[i] = key_hash[i % 16]
+        }
+
+        let cipher = ChaCha20Poly1305::new(GenericArray::clone_from_slice(&key));
+        let mut nonce = [0; 12];
+        for i in 0..12 {
+            nonce[i] = key_hash[i];
+        }
+
+        (cipher, nonce)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        static SRC: &[u8] = include_bytes!("./lib.rs");
+
+        #[test]
+        fn camouflage_round_trip() {
+            let dummy = "Hello, World!";
+
+            let camouflaged =
+                super::camouflage(SRC.to_vec(), dummy, Some(11), Some("secret")).unwrap();
+            let decamouflaged = super::decamouflage(&camouflaged, Some("secret")).unwrap();
+
+            assert_eq!(SRC, decamouflaged.as_slice());
+        }
+    }
 }
 
 #[cfg(test)]
@@ -269,16 +317,5 @@ mod tests {
         for (ob, db) in SRC.iter().copied().zip(decoded) {
             assert_eq!(ob, db.unwrap());
         }
-    }
-
-    #[cfg(feature = "camouflage")]
-    #[test]
-    fn camouflage_round_trip() {
-        let dummy = "Hello, World!";
-
-        let camouflaged = super::camouflage(SRC.to_vec(), dummy, Some(11), Some("secret"));
-        let decamouflaged = super::decamouflage(&camouflaged, Some("secret"));
-
-        assert_eq!(SRC, decamouflaged.as_slice());
     }
 }
