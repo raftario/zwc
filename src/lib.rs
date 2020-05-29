@@ -90,6 +90,28 @@ impl Compression {
         Ok(Self(p0 | (p1 << 4)))
     }
 
+    pub fn optimal(data: &[u8]) -> (Self, u8, u8) {
+        let mut patterns: [usize; 16] = [0; 16];
+        for b in data.iter().copied() {
+            patterns[(b & 0b0000_1111) as usize] += 1;
+            patterns[((b & 0b1111_0000) >> 4) as usize] += 1;
+        }
+
+        let recurrent_patterns = patterns.iter().enumerate().fold((0, 0), |acc, (i, o)| {
+            if *o > patterns[acc.0] {
+                (i, acc.1)
+            } else if *o > patterns[acc.1] {
+                (acc.0, i)
+            } else {
+                acc
+            }
+        });
+        let rp0 = recurrent_patterns.0 as u8;
+        let rp1 = recurrent_patterns.1 as u8;
+
+        (Self::new(rp0, rp1).unwrap(), rp0, rp1)
+    }
+
     #[inline]
     fn g0l(self) -> u8 {
         self.0 & 0b0000_1111
@@ -428,28 +450,7 @@ mod camouflage {
             compressed_payload.extend_from_slice(&nonce);
         }
 
-        let mut patterns = [0usize; 16];
-        for b in compressed_payload.iter().copied() {
-            patterns[(b & 0b0000_1111) as usize] += 1;
-            patterns[((b & 0b1111_0000) >> 4) as usize] += 1;
-        }
-        let recurrent_patterns =
-            patterns
-                .iter()
-                .copied()
-                .enumerate()
-                .fold([0; 2], |acc, (i, o)| {
-                    if o > patterns[acc[0]] {
-                        [i, acc[1]]
-                    } else if o > patterns[acc[1]] {
-                        [acc[0], i]
-                    } else {
-                        acc
-                    }
-                });
-        let rp0 = recurrent_patterns[0] as u8;
-        let rp1 = recurrent_patterns[1] as u8;
-        let compression = crate::Compression::new(rp0, rp1)?;
+        let (compression, rp0, rp1) = crate::Compression::optimal(&compressed_payload);
 
         let mut encoded_payload =
             crate::encode_compress(compressed_payload.iter().copied(), compression);
@@ -570,21 +571,6 @@ mod camouflage {
 
         ChaCha20Poly1305::new(GenericArray::clone_from_slice(&key))
     }
-
-    #[cfg(test)]
-    mod tests {
-        static SRC: &[u8] = include_bytes!("./lib.rs");
-
-        #[test]
-        fn round_trip() {
-            let dummy = "Hello, World!";
-
-            let camouflaged = super::camouflage(SRC.to_vec(), dummy, Some("secret"), None).unwrap();
-            let decamouflaged = super::decamouflage(&camouflaged, Some("secret")).unwrap();
-
-            assert_eq!(SRC, decamouflaged.as_slice());
-        }
-    }
 }
 
 #[cfg(test)]
@@ -593,8 +579,8 @@ mod tests {
 
     #[test]
     fn round_trip() {
-        let encoded = super::encode(SRC.iter().copied());
-        let decoded = super::decode(encoded);
+        let encoded = crate::encode(SRC.iter().copied());
+        let decoded = crate::decode(encoded);
 
         for (ob, db) in SRC.iter().copied().zip(decoded) {
             assert_eq!(ob, db.unwrap());
@@ -603,12 +589,23 @@ mod tests {
 
     #[test]
     fn compression_round_trip() {
-        let compression = super::Compression::new(0b0000, 0b1111).unwrap();
-        let encoded = super::encode_compress(SRC.iter().copied(), compression);
-        let decoded = super::decode_decompress(encoded, compression);
+        let compression = crate::Compression::new(0b0000, 0b1111).unwrap();
+        let encoded = crate::encode_compress(SRC.iter().copied(), compression);
+        let decoded = crate::decode_decompress(encoded, compression);
 
         for (ob, db) in SRC.iter().copied().zip(decoded) {
             assert_eq!(ob, db.unwrap());
         }
+    }
+
+    #[cfg(feature = "camouflage")]
+    #[test]
+    fn camouflage_round_trip() {
+        let dummy = "Hello, World!";
+
+        let camouflaged = crate::camouflage(SRC.to_vec(), dummy, Some("secret"), None).unwrap();
+        let decamouflaged = crate::decamouflage(&camouflaged, Some("secret")).unwrap();
+
+        assert_eq!(SRC, decamouflaged.as_slice());
     }
 }

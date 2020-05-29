@@ -7,5 +7,5 @@ description = "Hide data inside strings using zero-width characters"
 license = "MIT"
 
 [dependencies]
-zwc-encode = { path = ".." }
+zwc = { path = ".." }
 structopt = "0.3"

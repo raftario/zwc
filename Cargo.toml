@@ -1,5 +1,5 @@
 [package]
-name = "zwc-encode"
+name = "zwc"
 version = "0.1.0"
 authors = ["Raphaël Thériault <raphael_theriault@outlook.com>"]
 edition = "2018"
@@ -47,3 +47,10 @@ camouflage = [
 
 [workspace]
 members = ["cli"]
+
+[dev-dependencies]
+criterion = "0.3"
+
+[[bench]]
+name = "roundtrips"
+harness = false

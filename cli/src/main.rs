@@ -68,7 +68,7 @@ fn camouflage(
         data
     });
 
-    match zwc_encode::camouflage(
+    match zwc::camouflage(
         payload,
         dummy.as_ref(),
         key.as_ref().map(AsRef::as_ref),
@@ -92,7 +92,7 @@ fn decamouflage(camouflaged: Option<String>, key: Option<String>) {
         data
     });
 
-    match zwc_encode::decamouflage(&camouflaged, key.as_ref().map(AsRef::as_ref)) {
+    match zwc::decamouflage(&camouflaged, key.as_ref().map(AsRef::as_ref)) {
         Ok(payload) => io::stdout().lock().write_all(&payload).unwrap(),
         Err(e) => eprintln!("{}", e),
     }
