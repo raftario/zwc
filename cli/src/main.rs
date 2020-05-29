@@ -5,9 +5,8 @@ use std::{
 };
 use structopt::StructOpt;
 
-/// Hide and retrieve arbitrary data using zero-width characters
 #[derive(StructOpt)]
-#[structopt(author)]
+#[structopt(author, about)]
 enum Opt {
     /// Hides data inside a string
     #[structopt(alias = "c")]
