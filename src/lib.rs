@@ -18,6 +18,7 @@ const CHAR3: char = CHARS[3];
 const CHAR4: char = CHARS[4];
 const CHAR5: char = CHARS[5];
 
+/// Returns the binary value of a zero-width character
 #[inline]
 fn val(c: char) -> Result<u8, Error> {
     match c {
@@ -30,9 +31,11 @@ fn val(c: char) -> Result<u8, Error> {
     }
 }
 
+/// Represents a 2-4 zero-width character block
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct Block(u8);
+struct Block(u8);
 impl Block {
+    /// Converts a block to chars without compression
     #[inline]
     pub fn to_chars(self) -> [char; 4] {
         [
@@ -43,6 +46,7 @@ impl Block {
         ]
     }
 
+    /// Creates a block from chars without compression
     #[inline]
     pub fn from_chars(chars: [char; 4]) -> Result<Self, Error> {
         Ok(Self(
@@ -50,11 +54,13 @@ impl Block {
         ))
     }
 
+    /// Converts a block to chars with compression
     #[inline]
     pub fn to_compressed_chars(self, compression: Compression) -> ([char; 4], usize) {
         compression.block_to_chars(self)
     }
 
+    /// Creates a block from chars with compression
     #[inline]
     pub fn from_compressed_chars(
         chars: [char; 4],
@@ -77,9 +83,11 @@ impl From<Block> for u8 {
     }
 }
 
+/// Represents 4 bits patterns to compress into a single character instead of two
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct Compression(u8);
 impl Compression {
+    /// Creates a compression setting from two 4 bits patterns
     pub fn new(p0: u8, p1: u8) -> Result<Self, Error> {
         if p0 >= 16 {
             return Err(Error::InvalidCompressionPattern(p0));
@@ -90,6 +98,7 @@ impl Compression {
         Ok(Self(p0 | (p1 << 4)))
     }
 
+    /// Creates a compression setting by finding the two most common patterns in the provided data
     pub fn optimal(data: &[u8]) -> (Self, u8, u8) {
         let mut patterns: [usize; 16] = [0; 16];
         for b in data.iter().copied() {
@@ -112,24 +121,29 @@ impl Compression {
         (Self::new(rp0, rp1).unwrap(), rp0, rp1)
     }
 
+    /// Returns the first pattern as lower bytes
     #[inline]
     fn g0l(self) -> u8 {
         self.0 & 0b0000_1111
     }
+    /// Returns the second pattern as lower bytes
     #[inline]
     fn g1l(self) -> u8 {
         (self.0 & 0b1111_0000) >> 4
     }
 
+    /// Returns the first pattern as higher bytes
     #[inline]
     fn g0h(self) -> u8 {
         (self.0 & 0b0000_1111) << 4
     }
+    /// Returns the second pattern as higher bytes
     #[inline]
     fn g1h(self) -> u8 {
         self.0 & 0b1111_0000
     }
 
+    /// Converts a block to chars
     fn block_to_chars(self, b: Block) -> ([char; 4], usize) {
         let mut chars = ['\0'; 4];
         let mut len = 0;
@@ -161,6 +175,7 @@ impl Compression {
         (chars, len)
     }
 
+    /// Creates a block from chars
     fn block_from_chars(self, chars: [char; 4], len: usize) -> Result<Block, Error> {
         if len == 4 {
             Block::from_chars(chars)
@@ -200,6 +215,7 @@ impl Compression {
     }
 }
 
+/// Converts a byte iterator into a zero-width character iterator
 pub fn encode<T: Iterator<Item = u8>>(iter: T) -> impl Iterator<Item = char> {
     EncodeIter {
         inner: iter,
@@ -208,10 +224,12 @@ pub fn encode<T: Iterator<Item = u8>>(iter: T) -> impl Iterator<Item = char> {
     }
 }
 
+/// Converts a zero-width character iterator into a byte iterator
 pub fn decode<T: Iterator<Item = char>>(iter: T) -> impl Iterator<Item = Result<u8, Error>> {
     DecodeIter { inner: iter }
 }
 
+/// Converts a byte iterator into a zero-width character iterator compressed using the provided settings
 pub fn encode_compress<T: Iterator<Item = u8>>(
     iter: T,
     compression: Compression,
@@ -225,6 +243,7 @@ pub fn encode_compress<T: Iterator<Item = u8>>(
     }
 }
 
+/// Converts a zero-width character iterator into a byte iterator decompressed using the provided settings
 pub fn decode_decompress<T: Iterator<Item = char>>(
     iter: T,
     compression: Compression,
@@ -235,17 +254,22 @@ pub fn decode_decompress<T: Iterator<Item = char>>(
     }
 }
 
-pub fn is_zwc(c: char) -> bool {
+/// Check if a character is zero-width
+pub fn is_zw(c: char) -> bool {
     match c {
         CHAR0 | CHAR1 | CHAR2 | CHAR3 | CHAR4 | CHAR5 => true,
         _ => false,
     }
 }
 
+/// Represents an error that might occur while dealing with zero-width character iterators
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum Error {
+    /// Occurs when trying to decode a non-zero-width character
     InvalidCharacter(char),
+    /// Occurs when trying to decode an incomplete zero-width character block into a byte
     IncompleteBlock(usize),
+    /// Occurs when trying to use a pattern larger than 4 bits for compression
     InvalidCompressionPattern(u8),
 }
 impl fmt::Display for Error {
@@ -412,6 +436,7 @@ impl<T: Iterator<Item = char>> Iterator for DecodeDecompressIter<T> {
 mod camouflage {
     use std::fmt;
 
+    /// Hides a compressed and optionally encrypted payload inside a string
     pub fn camouflage(
         payload: Vec<u8>,
         dummy: &str,
@@ -475,13 +500,14 @@ mod camouflage {
         Ok(camouflaged)
     }
 
+    /// Retrieves a compressed and optionally encrypted payload from a string
     pub fn decamouflage(camouflaged: &str, key: Option<&str>) -> Result<Vec<u8>, Error> {
         use brotli::BrotliDecompress;
         use chacha20poly1305::aead::Aead;
         use generic_array::GenericArray;
 
         let mut encoded_payload: Vec<char> =
-            camouflaged.chars().filter(|c| crate::is_zwc(*c)).collect();
+            camouflaged.chars().filter(|c| crate::is_zw(*c)).collect();
 
         let c3 = encoded_payload.pop().ok_or(Error::InvalidPayload)?;
         let c2 = encoded_payload.pop().ok_or(Error::InvalidPayload)?;
@@ -512,7 +538,7 @@ mod camouflage {
         Ok(payload)
     }
 
-    /// Represents an error that might occur while camouflaging or decamouflaging a payload
+    /// Represents an error that might occur while hiding or retrieving a payload
     #[derive(Debug)]
     pub enum Error {
         Zwc(crate::Error),
@@ -549,6 +575,7 @@ mod camouflage {
         }
     }
 
+    /// Generates a cipher instance from a key
     fn get_cipher(key: &str) -> chacha20poly1305::ChaCha20Poly1305 {
         use chacha20poly1305::{aead::NewAead, ChaCha20Poly1305};
         use generic_array::GenericArray;
