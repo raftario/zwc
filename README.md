@@ -16,4 +16,4 @@ On an i7-7700HQ @ 2.80GHz, roundtrip throughput for the [sample text data](./sam
 
 ## `no_std` support
 
-The core encoding and decoding iterators do not do any heap allocation and support `no_std`. Extra helpers that require `std` are included by default but can be discarded by setting `default-features` to `fakse`.
+The core encoding and decoding iterators do not do any heap allocation and support `no_std`. Extra helpers that require `std` are included by default but can be discarded by setting `default-features` to `false`.
