@@ -1,7 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
-#[cfg(feature = "camouflage")]
-pub use camouflage::*;
+#[cfg(feature = "camo")]
+pub use camo::*;
 
 use core::fmt;
 
@@ -432,8 +432,8 @@ impl<T: Iterator<Item = char>> Iterator for DecodeDecompressIter<T> {
     }
 }
 
-#[cfg(feature = "camouflage")]
-mod camouflage {
+#[cfg(feature = "camo")]
+mod camo {
     use std::fmt;
 
     /// Hides a compressed and optionally encrypted payload inside a string

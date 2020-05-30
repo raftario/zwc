@@ -1,0 +1,23 @@
+{
+    "name": "zwc-web",
+    "version": "1.0.0",
+    "license": "MIT",
+    "scripts": {
+        "build": "rollup -c",
+        "dev": "rollup -c -w",
+        "start": "sirv public"
+    },
+    "devDependencies": {
+        "@rollup/plugin-commonjs": "^12",
+        "@rollup/plugin-node-resolve": "^8",
+        "@wasm-tool/rollup-plugin-rust": "^1",
+        "rollup": "^2",
+        "rollup-plugin-livereload": "^1",
+        "rollup-plugin-svelte": "^5",
+        "rollup-plugin-terser": "^5",
+        "svelte": "^3"
+    },
+    "dependencies": {
+        "sirv-cli": "^0.4"
+    }
+}

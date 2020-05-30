@@ -1,0 +1,23 @@
+[package]
+name = "zwc-wasm"
+version = "0.1.0"
+authors = ["Raphaël Thériault <raphael_theriault@outlook.com>"]
+edition = "2018"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+
+[dependencies]
+zwc = { path = ".." }
+wasm-bindgen = "0.2"
+getrandom = { version = "0.1", features = ["wasm-bindgen"] }
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3"
+
+[profile.release]
+opt-level = "s"

@@ -33,9 +33,9 @@ default-features = false
 features = ["std"]
 
 [features]
-default = ["camouflage"]
+default = ["camo"]
 std = []
-camouflage = [
+camo = [
     "brotli",
     "chacha20",
     "chacha20poly1305",
@@ -47,6 +47,7 @@ camouflage = [
 
 [workspace]
 members = ["cli"]
+exclude = ["wasm"]
 
 [dev-dependencies]
 criterion = "0.3"
