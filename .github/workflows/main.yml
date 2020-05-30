@@ -79,3 +79,41 @@ jobs:
         with:
           command: fmt
           args: --all -- --check
+  wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      - uses: actions/setup-node@v1
+        with:
+          node-version: '12'
+      - run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      - uses: actions/cache@v1
+        with:
+          path: ~/.cargo/registry
+          key: wasm-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+      - uses: actions/cache@v1
+        with:
+          path: ~/.cargo/git
+          key: wasm-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+      - uses: actions/cache@v1
+        with:
+          path: target
+          key: wasm-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+      - name: Run tests
+        run: wasm-pack test --headless --chrome --firefox
+        working-directory: wasm
+      - name: Install web UI dependencies
+        run: yarn
+        working-directory: web
+      - name: Build web UI
+        run: yarn build
+        working-directory: web
+      - name: Deploy web UI
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: web/public
