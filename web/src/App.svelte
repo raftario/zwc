@@ -200,7 +200,8 @@
 
 <style>
     main {
-        min-width: 480px;
+        width: 480px;
+        max-width: 100%;
     }
 
     #hide,
