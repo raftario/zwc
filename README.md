@@ -4,6 +4,16 @@ Rust library for encoding binary data using zero-width characters. Also optional
 
 [Try out the WebAssembly compiled version !](https://raftario.github.io/zwc/)
 
+## Usage
+
+### Web
+
+There is a [WebAssembly compiled version of the tool](https://raftario.github.io/zwc/) available. No need to install anything, just open the page in any modern browser and let the magic happen.
+
+### CLI
+
+Alternatively, you can clone this repository and run `cargo install --path cli` to install the command-line version of the tool on your system. The binary will be available as `zwcamo`.
+
 ## Why
 
 [StegCloak](https://github.com/KuroLabs/stegcloak) popped on my GitHub dashboard feed and I thought it was pretty cool, and decided to reimplement it myself for fun.
