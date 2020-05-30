@@ -13,6 +13,7 @@ export default {
     },
     output: {
         format: "es",
+        sourcemap: true,
         name: "app",
         dir: "public/build/",
     },
