@@ -2,6 +2,8 @@
 
 Rust library for encoding binary data using zero-width characters. Also optionally includes helpers for compressing, encrypting and hiding data inside strings, and a CLI wrapping that functionality.
 
+[Try out the WebAssembly compiled version !](https://raftario.github.io/zwc/)
+
 ## Why
 
 [StegCloak](https://github.com/KuroLabs/stegcloak) popped on my GitHub dashboard feed and I thought it was pretty cool, and decided to reimplement it myself for fun.
