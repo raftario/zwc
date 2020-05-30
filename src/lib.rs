@@ -461,17 +461,15 @@ mod camouflage {
         )?;
 
         if let Some(k) = key {
-            let cipher = get_cipher(k);
-
-            let mut nonce = [0; 12];
+            let mut nonce = [0; 32];
             ChaCha20Rng::from_entropy().fill_bytes(&mut nonce);
 
+            let cipher = get_cipher(k, &nonce);
             cipher.encrypt_in_place(
-                GenericArray::from_slice(&nonce),
+                GenericArray::from_slice(&nonce[..12]),
                 b"",
                 &mut compressed_payload,
             )?;
-
             compressed_payload.extend_from_slice(&nonce);
         }
 
@@ -523,13 +521,17 @@ mod camouflage {
                 .collect::<Result<Vec<u8>, _>>()?;
 
         if let Some(k) = key {
-            let cipher = get_cipher(k);
-
-            let nonce_boundary = compressed_payload.len() - 12;
-            let nonce = GenericArray::clone_from_slice(&compressed_payload[nonce_boundary..]);
+            let mut nonce = [0; 32];
+            let nonce_boundary = compressed_payload.len() - 32;
+            nonce.copy_from_slice(&compressed_payload[nonce_boundary..]);
             compressed_payload.truncate(nonce_boundary);
 
-            cipher.decrypt_in_place(&nonce, b"", &mut compressed_payload)?;
+            let cipher = get_cipher(k, &nonce);
+            cipher.decrypt_in_place(
+                GenericArray::from_slice(&nonce[..12]),
+                b"",
+                &mut compressed_payload,
+            )?;
         }
 
         let mut payload = Vec::with_capacity(compressed_payload.len() * 4);
@@ -576,17 +578,13 @@ mod camouflage {
     }
 
     /// Generates a cipher instance from a key
-    fn get_cipher(key: &str) -> chacha20poly1305::ChaCha20Poly1305 {
+    fn get_cipher(key: &str, nonce: &[u8; 32]) -> chacha20poly1305::ChaCha20Poly1305 {
         use chacha20poly1305::{aead::NewAead, ChaCha20Poly1305};
         use generic_array::GenericArray;
         use poly1305::{universal_hash::UniversalHash, Poly1305};
 
         let key_bytes = key.as_bytes();
-        let mut key_hasher_key = [0; 32];
-        for i in 0..32 {
-            key_hasher_key[i] = key_bytes[i % key_bytes.len()];
-        }
-        let key_hash = Poly1305::new(GenericArray::from_slice(&key_hasher_key))
+        let key_hash = Poly1305::new(GenericArray::from_slice(nonce))
             .chain(key_bytes)
             .result()
             .into_bytes();
